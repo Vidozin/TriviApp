@@ -55,17 +55,17 @@ export default function PlayerGame() {
     return () => clearInterval(interval);
   }, [sessionState?.status, sessionState?.currentQuestion, sessionState?.questionStartTime]);
 
-  // Ensure local selected answer is cleared when advancing to a new question
+  // Clear selected answer only when a new question starts
   useEffect(() => {
-    // clear local selection whenever the question index or start time changes
     if (sessionState?.status === "question") {
       setSelectedAnswer(null);
     }
-  }, [sessionState?.currentQuestionIndex, sessionState?.questionStartTime, sessionState?.status]);
+  }, [sessionState?.currentQuestionIndex, sessionState?.questionStartTime]);
 
   const handleAnswer = async (answer: string) => {
     if (!code || !playerId || !sessionState?.currentQuestion || sessionState.status !== "question") return;
     if (timeLeft === 0) return;
+    if (selectedAnswer !== null) return; // prevent double answering
     const qIndex = sessionState.currentQuestionIndex;
     const isCorrect = answer === sessionState.currentQuestion.correctAnswer;
     const points = isCorrect ? sessionState.currentQuestion.points : 0;
@@ -79,14 +79,6 @@ export default function PlayerGame() {
       await setDoc(playerRef, { ...snap.data(), score: (snap.data().score || 0) + points, answeredCurrentQuestion: true, lastAnswer: answer });
     }
   };
-
-  useEffect(() => {
-    if (sessionState?.status === "question" && !playerState?.answeredCurrentQuestion) {
-      setSelectedAnswer(null);
-    } else if (playerState?.lastAnswer) {
-      setSelectedAnswer(playerState.lastAnswer);
-    }
-  }, [sessionState?.status, playerState?.answeredCurrentQuestion, playerState?.lastAnswer]);
 
   if (!sessionState || !playerState) {
     return <div className="min-h-screen bg-background flex items-center justify-center"><div className="w-8 h-8 border-4 border-primary border-t-transparent rounded-full animate-spin" /></div>;
@@ -132,7 +124,7 @@ export default function PlayerGame() {
               <div className="flex-1 flex flex-col gap-3">
                 {currentQ.options.map((opt: string, i: number) => {
                   const isSelected = selectedAnswer === opt;
-                  const hasAnswered = !!selectedAnswer;
+                  const hasAnswered = selectedAnswer !== null;
                   return (
                     <Button key={i} variant="outline"
                       className={`h-auto min-h-[4rem] text-left justify-start p-4 text-lg md:text-xl font-medium border-2 rounded-xl transition-all whitespace-normal
