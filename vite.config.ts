@@ -28,7 +28,6 @@ export default defineConfig({
             "@radix-ui/react-tooltip",
           ],
           charts: ["recharts"],
-          firebase: ["firebase"],
           motion: ["framer-motion"],
         },
       },
