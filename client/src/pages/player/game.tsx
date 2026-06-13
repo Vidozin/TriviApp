@@ -55,6 +55,14 @@ export default function PlayerGame() {
     return () => clearInterval(interval);
   }, [sessionState?.status, sessionState?.currentQuestion, sessionState?.questionStartTime]);
 
+  // Ensure local selected answer is cleared when advancing to a new question
+  useEffect(() => {
+    // clear local selection whenever the question index or start time changes
+    if (sessionState?.status === "question") {
+      setSelectedAnswer(null);
+    }
+  }, [sessionState?.currentQuestionIndex, sessionState?.questionStartTime, sessionState?.status]);
+
   const handleAnswer = async (answer: string) => {
     if (!code || !playerId || !sessionState?.currentQuestion || sessionState.status !== "question") return;
     if (timeLeft === 0) return;
