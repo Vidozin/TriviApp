@@ -62,6 +62,15 @@ export default function HostLiveSession() {
 
   const handleStartGame = async () => {
     if (!sessionData?.code || activeQuestions.length === 0) return;
+    // reset players' answered state so they can answer the first question
+    try {
+      await Promise.all(players.map((p) =>
+        updateDoc(doc(db, `sessions/${sessionData.code}/players/${p.id}`), { answeredCurrentQuestion: false, lastAnswer: null }).catch(() => {}),
+      ));
+    } catch {
+      // non-fatal
+    }
+
     await updateDoc(doc(db, `sessions/${sessionData.code}`), {
       status: "question",
       currentQuestionIndex: 0,
@@ -74,6 +83,15 @@ export default function HostLiveSession() {
     if (!sessionData?.code || !sessionState) return;
     const nextIndex = sessionState.currentQuestionIndex + 1;
     if (nextIndex < activeQuestions.length) {
+      // reset players' answered state so they can answer the next question
+      try {
+        await Promise.all(players.map((p) =>
+          updateDoc(doc(db, `sessions/${sessionData.code}/players/${p.id}`), { answeredCurrentQuestion: false, lastAnswer: null }).catch(() => {}),
+        ));
+      } catch {
+        // non-fatal
+      }
+
       await updateDoc(doc(db, `sessions/${sessionData.code}`), {
         status: "question",
         currentQuestionIndex: nextIndex,
