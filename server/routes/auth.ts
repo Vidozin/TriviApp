@@ -27,11 +27,18 @@ router.post("/auth/login", (req, res): void => {
   }
 
   (req.session as any).isHost = true;
+  // log session id and cookie options for debugging in production
+  // eslint-disable-next-line no-console
+  console.debug("[auth] setting isHost on session, id=", (req.session as any).id);
   req.session.save((err) => {
     if (err) {
+      // eslint-disable-next-line no-console
+      console.error("[auth] session save error:", err);
       res.status(500).json({ error: "Session error" });
       return;
     }
+    // eslint-disable-next-line no-console
+    console.debug("[auth] session saved, id=", (req.session as any).id, "cookies=", req.headers.cookie);
     res.json(HostLoginResponse.parse({ authenticated: true }));
   });
 });
