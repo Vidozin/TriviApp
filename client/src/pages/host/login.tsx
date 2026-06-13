@@ -17,10 +17,8 @@ export default function HostLogin() {
   const loginMutation = useHostLogin({
     mutation: {
       onSuccess: () => {
-        // optimistically mark as authenticated so HostGuard won't redirect
-        queryClient.setQueryData(getGetAuthStatusQueryKey(), { authenticated: true });
-        queryClient.invalidateQueries({ queryKey: getGetAuthStatusQueryKey() });
-        setLocation("/host");
+      queryClient.setQueryData(getGetAuthStatusQueryKey(), { authenticated: true });
+      setLocation("/host");
       },
       onError: () => {
         setError("Incorrect password");
