@@ -16,6 +16,23 @@ export default defineConfig({
   build: {
     outDir: path.resolve(__dirname, "dist/public"),
     emptyOutDir: true,
+    chunkSizeWarningLimit: 1000,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom"],
+          ui: [
+            "@radix-ui/react-accordion",
+            "@radix-ui/react-alert-dialog",
+            "@radix-ui/react-dropdown-menu",
+            "@radix-ui/react-tooltip",
+          ],
+          charts: ["recharts"],
+          firebase: ["firebase"],
+          motion: ["framer-motion"],
+        },
+      },
+    },
   },
   server: {
     port: 5173,
