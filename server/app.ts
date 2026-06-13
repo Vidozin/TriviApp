@@ -8,7 +8,6 @@ import router from "./routes";
 import { logger } from "./logger";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 const app: Express = express();
 
 app.use(
@@ -26,8 +25,8 @@ app.use(
 );
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
 app.use(
   session({
