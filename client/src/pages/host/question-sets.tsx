@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { useListQuestionSets, useCreateQuestionSet, useDeleteQuestionSet, getListQuestionSetsQueryKey } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -9,9 +9,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { ArrowLeft, Plus, Settings, Trash2, Library } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 
 export default function HostQuestionSets() {
   const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
   const [isCreating, setIsCreating] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -23,13 +25,17 @@ export default function HostQuestionSets() {
 
   const createSet = useCreateQuestionSet({
     mutation: {
-      onSuccess: () => {
+      onSuccess: (result) => {
         queryClient.invalidateQueries({ queryKey: getListQuestionSetsQueryKey() });
         setIsCreating(false);
         setName("");
         setDescription("");
         setCategory("");
-      }
+        setLocation(`/host/question-sets/${result.id}`);
+      },
+      onError: () => {
+        toast.error("Failed to create question set. Check your connection and try again.");
+      },
     }
   });
 
@@ -37,13 +43,22 @@ export default function HostQuestionSets() {
     mutation: {
       onSuccess: () => {
         queryClient.invalidateQueries({ queryKey: getListQuestionSetsQueryKey() });
-      }
+      },
+      onError: () => {
+        toast.error("Failed to delete question set.");
+      },
     }
   });
 
   const handleCreate = () => {
-    if (!name) return;
-    createSet.mutate({ data: { name, description, category } });
+    if (!name.trim()) return;
+    createSet.mutate({
+      data: {
+        name: name.trim(),
+        description: description.trim() || undefined,
+        category: category.trim() || undefined,
+      },
+    });
   };
 
   return (
