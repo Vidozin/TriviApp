@@ -8,7 +8,13 @@ import router from "./routes";
 import { logger } from "./logger";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
 const app: Express = express();
+
+// when behind a proxy (like Render), trust the first proxy so secure cookies work
+if (process.env.NODE_ENV === "production") {
+  app.set("trust proxy", 1);
+}
 
 app.use(
   pinoHttp({
@@ -25,8 +31,8 @@ app.use(
 );
 
 app.use(cors({ origin: true, credentials: true }));
-app.use(express.json({ limit: "10mb" }));
-app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 app.use(
   session({
