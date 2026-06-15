@@ -76,7 +76,13 @@ export default function PlayerGame() {
     const playerRef = doc(db, `sessions/${code}/players/${playerId}`);
     const snap = await getDoc(playerRef);
     if (snap.exists()) {
-      await setDoc(playerRef, { ...snap.data(), score: (snap.data().score || 0) + points, answeredCurrentQuestion: true, lastAnswer: answer });
+      await setDoc(playerRef, {
+        ...snap.data(),
+        score: (snap.data().score || 0) + points,
+        correctAnswers: (snap.data().correctAnswers || 0) + (isCorrect ? 1 : 0),
+        answeredCurrentQuestion: true,
+        lastAnswer: answer,
+      });
     }
   };
 
