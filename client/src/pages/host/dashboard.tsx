@@ -92,7 +92,7 @@ export default function HostDashboard() {
                 showTeamRankings: session.showTeamRankings ?? false,
                 startedAt: new Date().toISOString(),
                 filteredQuestionIds: filteredQuestions.map(q => q.id),
-              });
+              }, { merge: true });
             } catch {
               // Non-fatal
             }
