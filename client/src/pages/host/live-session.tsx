@@ -51,7 +51,7 @@ export default function HostLiveSession() {
           reviewEnabled: sessionData.reviewEnabled || false,
           showTeamRankings: sessionData.showTeamRankings || false,
           startedAt: new Date().toISOString()
-        });
+        }, { merge: true });
       }
     });
 
