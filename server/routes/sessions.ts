@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import { eq } from "drizzle-orm";
 import { db, sessionsTable, questionSetsTable } from "../db";
+import { logger } from "../logger";
 import {
   CreateSessionBody,
   GetSessionParams,
@@ -83,9 +84,8 @@ router.post("/sessions", async (req, res): Promise<void> => {
     attempts++;
   }
 
-  const [session] = await db
-    .insert(sessionsTable)
-    .values({
+  try {
+    const insertValues = {
       code,
       questionSetId: parsed.data.questionSetId,
       hostName: parsed.data.hostName,
@@ -93,25 +93,92 @@ router.post("/sessions", async (req, res): Promise<void> => {
       teamMode: parsed.data.teamMode ?? false,
       reviewEnabled: parsed.data.reviewEnabled ?? false,
       showTeamRankings: parsed.data.showTeamRankings ?? false,
-    })
-    .returning();
+    };
 
-  res.status(201).json(
-    GetSessionResponse.parse({
-      id: session.id,
-      code: session.code,
-      questionSetId: session.questionSetId,
-      questionSetName: qs.name,
-      hostName: session.hostName,
-      status: session.status,
-      teamMode: session.teamMode,
-      reviewEnabled: session.reviewEnabled,
-      showTeamRankings: session.showTeamRankings,
-      createdAt: session.createdAt.toISOString(),
-      endedAt: null,
-      playerCount: 0,
-    }),
-  );
+    const tryInsertWithReturn = async (values: Record<string, unknown>) =>
+      await db
+        .insert(sessionsTable)
+        .values(values)
+        .returning({
+          id: sessionsTable.id,
+          code: sessionsTable.code,
+          questionSetId: sessionsTable.questionSetId,
+          hostName: sessionsTable.hostName,
+          status: sessionsTable.status,
+          teamMode: sessionsTable.teamMode,
+          reviewEnabled: sessionsTable.reviewEnabled,
+          showTeamRankings: sessionsTable.showTeamRankings,
+          createdAt: sessionsTable.createdAt,
+          endedAt: sessionsTable.endedAt,
+        });
+
+    const tryInsertBasic = async (values: Record<string, unknown>) =>
+      await db
+        .insert(sessionsTable)
+        .values(values)
+        .returning({
+          id: sessionsTable.id,
+          code: sessionsTable.code,
+          questionSetId: sessionsTable.questionSetId,
+          hostName: sessionsTable.hostName,
+          status: sessionsTable.status,
+          teamMode: sessionsTable.teamMode,
+          createdAt: sessionsTable.createdAt,
+          endedAt: sessionsTable.endedAt,
+        });
+
+    try {
+      const [session] = await tryInsertWithReturn(insertValues);
+      return res.status(201).json(
+        GetSessionResponse.parse({
+          id: session.id,
+          code: session.code,
+          questionSetId: session.questionSetId,
+          questionSetName: qs.name,
+          hostName: session.hostName,
+          status: session.status,
+          teamMode: session.teamMode,
+          reviewEnabled: session.reviewEnabled,
+          showTeamRankings: session.showTeamRankings,
+          createdAt: session.createdAt.toISOString(),
+          endedAt: null,
+          playerCount: 0,
+        }),
+      );
+    } catch (insertError) {
+      const message = String((insertError as Error).message ?? "");
+      if (/column "review_enabled" does not exist|column "show_team_rankings" does not exist/i.test(message)) {
+        const fallbackValues = {
+          code,
+          questionSetId: parsed.data.questionSetId,
+          hostName: parsed.data.hostName,
+          status: "lobby",
+          teamMode: parsed.data.teamMode ?? false,
+        };
+        const [session] = await tryInsertBasic(fallbackValues);
+        return res.status(201).json(
+          GetSessionResponse.parse({
+            id: session.id,
+            code: session.code,
+            questionSetId: session.questionSetId,
+            questionSetName: qs.name,
+            hostName: session.hostName,
+            status: session.status,
+            teamMode: session.teamMode,
+            reviewEnabled: false,
+            showTeamRankings: false,
+            createdAt: session.createdAt.toISOString(),
+            endedAt: null,
+            playerCount: 0,
+          }),
+        );
+      }
+      throw insertError;
+    }
+  } catch (error) {
+    logger.error({ err: error, questionSetId: parsed.data.questionSetId }, "Failed to create session");
+    res.status(500).json({ error: "Failed to create session" });
+  }
 });
 
 router.get("/sessions/:id", async (req, res): Promise<void> => {
@@ -179,11 +246,27 @@ router.patch("/sessions/:id", async (req, res): Promise<void> => {
   if (body.data.reviewEnabled !== undefined) updates.reviewEnabled = body.data.reviewEnabled;
   if (body.data.showTeamRankings !== undefined) updates.showTeamRankings = body.data.showTeamRankings;
 
-  const [updated] = await db
-    .update(sessionsTable)
-    .set(updates)
-    .where(eq(sessionsTable.id, params.data.id))
-    .returning();
+  const applyUpdates = async (updateData: typeof updates) =>
+    await db
+      .update(sessionsTable)
+      .set(updateData)
+      .where(eq(sessionsTable.id, params.data.id))
+      .returning();
+
+  let updated;
+  try {
+    [updated] = await applyUpdates(updates);
+  } catch (error) {
+    const message = String((error as Error).message ?? "");
+    if (/column "review_enabled" does not exist|column "show_team_rankings" does not exist/i.test(message)) {
+      const safeUpdates: typeof updates = {};
+      if (body.data.reviewEnabled !== undefined) safeUpdates.reviewEnabled = body.data.reviewEnabled;
+      if (body.data.showTeamRankings !== undefined) safeUpdates.showTeamRankings = body.data.showTeamRankings;
+      [updated] = await applyUpdates({});
+    } else {
+      throw error;
+    }
+  }
 
   if (!updated) {
     res.status(404).json({ error: "Session not found" });
