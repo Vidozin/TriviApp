@@ -1,8 +1,10 @@
 import { useEffect, useState, useMemo } from "react";
 import { Link, useParams } from "wouter";
-import { useGetSession, useGetQuestionSet, useSaveLeaderboard, getGetSessionQueryKey, getGetQuestionSetQueryKey } from "@/lib/api";
+import { useGetSession, useGetQuestionSet, useSaveLeaderboard, useUpdateSession, getGetSessionQueryKey, getGetQuestionSetQueryKey } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { Play, SkipForward, StopCircle, ArrowLeft, Users, Zap, CheckCircle2, Copy, Trophy } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Label } from "@/components/ui/label";
+import { Play, SkipForward, StopCircle, ArrowLeft, Users, Zap, CheckCircle2, Copy, Trophy, ListChecks, UsersRound } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { db } from "@/lib/firebase";
 import { doc, onSnapshot, setDoc, updateDoc, collection } from "firebase/firestore";
@@ -46,6 +48,8 @@ export default function HostLiveSession() {
           questionSetId: sessionData.questionSetId,
           hostName: sessionData.hostName,
           teamMode: sessionData.teamMode || false,
+          reviewEnabled: sessionData.reviewEnabled || false,
+          showTeamRankings: sessionData.showTeamRankings || false,
           startedAt: new Date().toISOString()
         });
       }
@@ -104,6 +108,19 @@ export default function HostLiveSession() {
   };
 
   const saveLeaderboard = useSaveLeaderboard();
+  const updateSession = useUpdateSession();
+
+  const handleToggleReview = async (checked: boolean) => {
+    if (!sessionData?.code) return;
+    await updateDoc(doc(db, `sessions/${sessionData.code}`), { reviewEnabled: checked });
+    if (sessionData.id) updateSession.mutate({ id: sessionData.id, data: { reviewEnabled: checked } });
+  };
+
+  const handleToggleTeamRankings = async (checked: boolean) => {
+    if (!sessionData?.code) return;
+    await updateDoc(doc(db, `sessions/${sessionData.code}`), { showTeamRankings: checked });
+    if (sessionData.id) updateSession.mutate({ id: sessionData.id, data: { showTeamRankings: checked } });
+  };
 
   const answeredCount = useMemo(
     () => players.filter((p) => p.answeredCurrentQuestion).length,
@@ -318,21 +335,76 @@ export default function HostLiveSession() {
                 {status === "lobby" ? "Waiting to start..." : "Session Complete"}
               </div>
             )}
+            <div className="mt-4 pt-4 border-t border-border space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <ListChecks className="w-4 h-4 text-muted-foreground shrink-0" />
+                  <div>
+                    <Label className="text-sm font-medium">Question Review</Label>
+                    <p className="text-xs text-muted-foreground">Players can review answers after the game</p>
+                  </div>
+                </div>
+                <Switch checked={!!sessionState?.reviewEnabled} onCheckedChange={handleToggleReview} />
+              </div>
+              {sessionData?.teamMode && (
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <UsersRound className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <div>
+                      <Label className="text-sm font-medium">Team Rankings</Label>
+                      <p className="text-xs text-muted-foreground">Group leaderboard scores by team</p>
+                    </div>
+                  </div>
+                  <Switch checked={!!sessionState?.showTeamRankings} onCheckedChange={handleToggleTeamRankings} />
+                </div>
+              )}
+            </div>
           </div>
           <div className="flex-1 overflow-y-auto p-4">
             <h3 className="font-bold uppercase tracking-wider text-sm text-muted-foreground mb-4 sticky top-0 bg-card py-1">Live Leaderboard</h3>
-            <div className="space-y-2">
-              {players.map((p, i) => (
-                <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-background border border-border">
-                  <div className="flex items-center gap-3">
-                    <div className="w-6 text-center font-bold text-muted-foreground">{i + 1}</div>
-                    <div className="font-bold">{p.name}</div>
+            {sessionState?.showTeamRankings && sessionData?.teamMode ? (
+              <div className="space-y-2">
+                {Object.values(
+                  players.reduce<Record<string, { teamName: string; score: number; memberCount: number }>>((acc, p) => {
+                    const key = (p.teamName as string) || (p.name as string) || p.id;
+                    if (!acc[key]) acc[key] = { teamName: key, score: 0, memberCount: 0 };
+                    acc[key].score += (p.score as number) || 0;
+                    acc[key].memberCount++;
+                    return acc;
+                  }, {})
+                )
+                  .sort((a, b) => b.score - a.score)
+                  .map((team, i) => (
+                    <div key={team.teamName} className="flex items-center justify-between p-3 rounded-xl bg-background border border-border">
+                      <div className="flex items-center gap-3">
+                        <div className="w-6 text-center font-bold text-muted-foreground">{i + 1}</div>
+                        <div>
+                          <div className="font-bold">{team.teamName}</div>
+                          <div className="text-xs text-muted-foreground">{team.memberCount} player{team.memberCount !== 1 ? "s" : ""}</div>
+                        </div>
+                      </div>
+                      <div className="font-black text-primary font-mono">{team.score}</div>
+                    </div>
+                  ))}
+                {players.length === 0 && <div className="text-center text-muted-foreground text-sm py-4">No players joined yet.</div>}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {players.map((p, i) => (
+                  <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-background border border-border">
+                    <div className="flex items-center gap-3">
+                      <div className="w-6 text-center font-bold text-muted-foreground">{i + 1}</div>
+                      <div>
+                        <div className="font-bold">{p.name}</div>
+                        {p.teamName && <div className="text-xs text-muted-foreground">{p.teamName}</div>}
+                      </div>
+                    </div>
+                    <div className="font-black text-primary font-mono">{p.score}</div>
                   </div>
-                  <div className="font-black text-primary font-mono">{p.score}</div>
-                </div>
-              ))}
-              {players.length === 0 && <div className="text-center text-muted-foreground text-sm py-4">No players joined yet.</div>}
-            </div>
+                ))}
+                {players.length === 0 && <div className="text-center text-muted-foreground text-sm py-4">No players joined yet.</div>}
+              </div>
+            )}
           </div>
         </aside>
       </div>

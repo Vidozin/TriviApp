@@ -15,6 +15,7 @@ import HostQuestionSetDetail from "@/pages/host/question-set-detail";
 import HostLiveSession from "@/pages/host/live-session";
 import PlayerJoin from "@/pages/player/join";
 import PlayerGame from "@/pages/player/game";
+import PlayerReview from "@/pages/player/review";
 import Leaderboard from "@/pages/leaderboard";
 
 const queryClient = new QueryClient({
@@ -52,6 +53,7 @@ function Router() {
       </Route>
       <Route path="/play" component={PlayerJoin} />
       <Route path="/play/:code" component={PlayerGame} />
+      <Route path="/play/:code/review" component={PlayerReview} />
       <Route path="/leaderboard" component={Leaderboard} />
       <Route component={NotFound} />
     </Switch>

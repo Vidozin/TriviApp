@@ -4,6 +4,8 @@ import { db, sessionsTable, questionSetsTable } from "../db";
 import {
   CreateSessionBody,
   GetSessionParams,
+  UpdateSessionParams,
+  UpdateSessionBody,
   ListSessionsResponse,
   GetSessionResponse,
 } from "../validators";
@@ -29,6 +31,8 @@ router.get("/sessions", async (_req, res): Promise<void> => {
       hostName: sessionsTable.hostName,
       status: sessionsTable.status,
       teamMode: sessionsTable.teamMode,
+      reviewEnabled: sessionsTable.reviewEnabled,
+      showTeamRankings: sessionsTable.showTeamRankings,
       createdAt: sessionsTable.createdAt,
       endedAt: sessionsTable.endedAt,
     })
@@ -46,6 +50,8 @@ router.get("/sessions", async (_req, res): Promise<void> => {
         hostName: s.hostName,
         status: s.status,
         teamMode: s.teamMode,
+        reviewEnabled: s.reviewEnabled,
+        showTeamRankings: s.showTeamRankings,
         createdAt: s.createdAt.toISOString(),
         endedAt: s.endedAt ? s.endedAt.toISOString() : null,
         playerCount: 0,
@@ -85,6 +91,8 @@ router.post("/sessions", async (req, res): Promise<void> => {
       hostName: parsed.data.hostName,
       status: "lobby",
       teamMode: parsed.data.teamMode ?? false,
+      reviewEnabled: parsed.data.reviewEnabled ?? false,
+      showTeamRankings: parsed.data.showTeamRankings ?? false,
     })
     .returning();
 
@@ -97,6 +105,8 @@ router.post("/sessions", async (req, res): Promise<void> => {
       hostName: session.hostName,
       status: session.status,
       teamMode: session.teamMode,
+      reviewEnabled: session.reviewEnabled,
+      showTeamRankings: session.showTeamRankings,
       createdAt: session.createdAt.toISOString(),
       endedAt: null,
       playerCount: 0,
@@ -120,6 +130,8 @@ router.get("/sessions/:id", async (req, res): Promise<void> => {
       hostName: sessionsTable.hostName,
       status: sessionsTable.status,
       teamMode: sessionsTable.teamMode,
+      reviewEnabled: sessionsTable.reviewEnabled,
+      showTeamRankings: sessionsTable.showTeamRankings,
       createdAt: sessionsTable.createdAt,
       endedAt: sessionsTable.endedAt,
     })
@@ -141,8 +153,58 @@ router.get("/sessions/:id", async (req, res): Promise<void> => {
       hostName: row.hostName,
       status: row.status,
       teamMode: row.teamMode,
+      reviewEnabled: row.reviewEnabled,
+      showTeamRankings: row.showTeamRankings,
       createdAt: row.createdAt.toISOString(),
       endedAt: row.endedAt ? row.endedAt.toISOString() : null,
+      playerCount: 0,
+    }),
+  );
+});
+
+router.patch("/sessions/:id", async (req, res): Promise<void> => {
+  const params = UpdateSessionParams.safeParse(req.params);
+  if (!params.success) {
+    res.status(400).json({ error: params.error.message });
+    return;
+  }
+
+  const body = UpdateSessionBody.safeParse(req.body);
+  if (!body.success) {
+    res.status(400).json({ error: body.error.message });
+    return;
+  }
+
+  const updates: Partial<{ reviewEnabled: boolean; showTeamRankings: boolean }> = {};
+  if (body.data.reviewEnabled !== undefined) updates.reviewEnabled = body.data.reviewEnabled;
+  if (body.data.showTeamRankings !== undefined) updates.showTeamRankings = body.data.showTeamRankings;
+
+  const [updated] = await db
+    .update(sessionsTable)
+    .set(updates)
+    .where(eq(sessionsTable.id, params.data.id))
+    .returning();
+
+  if (!updated) {
+    res.status(404).json({ error: "Session not found" });
+    return;
+  }
+
+  const [qs] = await db.select().from(questionSetsTable).where(eq(questionSetsTable.id, updated.questionSetId));
+
+  res.json(
+    GetSessionResponse.parse({
+      id: updated.id,
+      code: updated.code,
+      questionSetId: updated.questionSetId,
+      questionSetName: qs?.name ?? "Unknown",
+      hostName: updated.hostName,
+      status: updated.status,
+      teamMode: updated.teamMode,
+      reviewEnabled: updated.reviewEnabled,
+      showTeamRankings: updated.showTeamRankings,
+      createdAt: updated.createdAt.toISOString(),
+      endedAt: updated.endedAt ? updated.endedAt.toISOString() : null,
       playerCount: 0,
     }),
   );

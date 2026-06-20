@@ -34,9 +34,17 @@ export const CreateSessionBody = z.object({
   questionSetId: z.number(),
   hostName: z.string(),
   teamMode: z.boolean().optional(),
+  reviewEnabled: z.boolean().optional(),
+  showTeamRankings: z.boolean().optional(),
 });
 
 export const GetSessionParams = z.object({ id: z.coerce.number() });
+
+export const UpdateSessionParams = z.object({ id: z.coerce.number() });
+export const UpdateSessionBody = z.object({
+  reviewEnabled: z.boolean().optional(),
+  showTeamRankings: z.boolean().optional(),
+});
 
 const LeaderboardEntrySchema = z.object({
   id: z.number(),
@@ -119,6 +127,8 @@ export const ListSessionsResponse = z.array(
     hostName: z.string(),
     status: z.string(),
     teamMode: z.boolean(),
+    reviewEnabled: z.boolean(),
+    showTeamRankings: z.boolean(),
     createdAt: z.string(),
     endedAt: z.string().nullish(),
     playerCount: z.number(),
@@ -133,6 +143,8 @@ export const GetSessionResponse = z.object({
   hostName: z.string(),
   status: z.string(),
   teamMode: z.boolean(),
+  reviewEnabled: z.boolean(),
+  showTeamRankings: z.boolean(),
   createdAt: z.string(),
   endedAt: z.string().nullish(),
   playerCount: z.number(),

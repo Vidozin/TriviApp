@@ -56,6 +56,8 @@ export interface Session {
   hostName: string;
   status: string;
   teamMode: boolean;
+  reviewEnabled: boolean;
+  showTeamRankings: boolean;
   createdAt: string;
   endedAt?: string | null;
   playerCount: number;
@@ -196,9 +198,9 @@ export function useListSessions(options?: { query?: UseQueryOptions<Session[], E
 }
 
 export function useCreateSession(options?: {
-  mutation?: UseMutationOptions<Session, Error, { data: { questionSetId: number; hostName: string; teamMode?: boolean } }>;
+  mutation?: UseMutationOptions<Session, Error, { data: { questionSetId: number; hostName: string; teamMode?: boolean; reviewEnabled?: boolean; showTeamRankings?: boolean } }>;
 }) {
-  return useMutation<Session, Error, { data: { questionSetId: number; hostName: string; teamMode?: boolean } }>({
+  return useMutation<Session, Error, { data: { questionSetId: number; hostName: string; teamMode?: boolean; reviewEnabled?: boolean; showTeamRankings?: boolean } }>({
     mutationFn: ({ data }) =>
       apiFetch<Session>("/api/sessions", {
         method: "POST",
@@ -220,6 +222,20 @@ export function useGetSession(
     queryFn: ({ signal }) => apiFetch<Session>(`/api/sessions/${id}`, { signal }),
     enabled: !!id,
     ...options?.query,
+  });
+}
+
+export function useUpdateSession(options?: {
+  mutation?: UseMutationOptions<Session, Error, { id: number; data: { reviewEnabled?: boolean; showTeamRankings?: boolean } }>;
+}) {
+  return useMutation<Session, Error, { id: number; data: { reviewEnabled?: boolean; showTeamRankings?: boolean } }>({
+    mutationFn: ({ id, data }) =>
+      apiFetch<Session>(`/api/sessions/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      }),
+    ...options?.mutation,
   });
 }
 

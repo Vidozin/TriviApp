@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { db } from "@/lib/firebase";
 import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
 import { motion, AnimatePresence } from "framer-motion";
-import { Trophy, Clock, AlertCircle } from "lucide-react";
+import { Trophy, Clock, AlertCircle, ListChecks } from "lucide-react";
 
 export default function PlayerGame() {
   const params = useParams();
@@ -185,7 +185,12 @@ export default function PlayerGame() {
               <h2 className="text-4xl font-black mb-2 text-foreground">Game Over</h2>
               <div className="text-xl text-muted-foreground mb-8">Final Score</div>
               <div className="text-7xl font-black text-primary font-mono">{playerState.score}</div>
-              <Button className="mt-12 w-full max-w-xs h-14 text-lg font-bold" onClick={() => setLocation('/')}>
+              {sessionState.reviewEnabled && (
+                <Button variant="outline" className="mt-8 w-full max-w-xs h-14 text-lg font-bold gap-2" onClick={() => setLocation(`/play/${code}/review`)}>
+                  <ListChecks className="w-5 h-5" /> Review Answers
+                </Button>
+              )}
+              <Button className="mt-4 w-full max-w-xs h-14 text-lg font-bold" onClick={() => setLocation('/')}>
                 Return Home
               </Button>
             </motion.div>

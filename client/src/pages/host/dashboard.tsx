@@ -21,6 +21,8 @@ export default function HostDashboard() {
   const [hostName, setHostName] = useState("Host");
   const [selectedSet, setSelectedSet] = useState("");
   const [teamMode, setTeamMode] = useState(false);
+  const [reviewEnabled, setReviewEnabled] = useState(false);
+  const [showTeamRankings, setShowTeamRankings] = useState(false);
 
   const [filterDifficulty, setFilterDifficulty] = useState("all");
   const [filterCategory, setFilterCategory] = useState("all");
@@ -75,7 +77,7 @@ export default function HostDashboard() {
     if (!selectedSet || !hostName) return;
 
     createSession.mutate(
-      { data: { questionSetId: parseInt(selectedSet), hostName, teamMode } },
+      { data: { questionSetId: parseInt(selectedSet), hostName, teamMode, reviewEnabled, showTeamRankings } },
       {
         onSuccess: async (session) => {
           if (hasActiveFilter && filteredQuestions.length > 0) {
@@ -86,6 +88,8 @@ export default function HostDashboard() {
                 questionSetId: session.questionSetId,
                 hostName: session.hostName,
                 teamMode: session.teamMode ?? false,
+                reviewEnabled: session.reviewEnabled ?? false,
+                showTeamRankings: session.showTeamRankings ?? false,
                 startedAt: new Date().toISOString(),
                 filteredQuestionIds: filteredQuestions.map(q => q.id),
               });
@@ -218,7 +222,23 @@ export default function HostDashboard() {
                       <Label className="text-base">Team Mode</Label>
                       <p className="text-xs text-muted-foreground">Ask players for team names</p>
                     </div>
-                    <Switch checked={teamMode} onCheckedChange={setTeamMode} />
+                    <Switch checked={teamMode} onCheckedChange={(v) => { setTeamMode(v); if (!v) setShowTeamRankings(false); }} />
+                  </div>
+                  {teamMode && (
+                    <div className="flex items-center justify-between pl-4 border-l-2 border-border">
+                      <div>
+                        <Label className="text-base">Team Rankings</Label>
+                        <p className="text-xs text-muted-foreground">Show scores grouped by team</p>
+                      </div>
+                      <Switch checked={showTeamRankings} onCheckedChange={setShowTeamRankings} />
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between pt-2 border-t">
+                    <div>
+                      <Label className="text-base">Question Review</Label>
+                      <p className="text-xs text-muted-foreground">Let players review every answer after the game</p>
+                    </div>
+                    <Switch checked={reviewEnabled} onCheckedChange={setReviewEnabled} />
                   </div>
                 </div>
                 <DialogFooter>

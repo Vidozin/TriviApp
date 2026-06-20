@@ -10,6 +10,8 @@ export const sessionsTable = pgTable("sessions", {
   hostName: text("host_name").notNull(),
   status: text("status").notNull().default("lobby"),
   teamMode: boolean("team_mode").notNull().default(false),
+  reviewEnabled: boolean("review_enabled").notNull().default(false),
+  showTeamRankings: boolean("show_team_rankings").notNull().default(false),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   endedAt: timestamp("ended_at", { withTimezone: true }),
 });

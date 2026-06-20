@@ -1,9 +1,10 @@
-import { useGetLeaderboard, useGetLeaderboardStats, getGetLeaderboardQueryKey, getGetLeaderboardStatsQueryKey } from "@/lib/api";
+import { useGetLeaderboard, useGetLeaderboardStats, useGetSession, getGetLeaderboardQueryKey, getGetLeaderboardStatsQueryKey, getGetSessionQueryKey } from "@/lib/api";
 import { Link, useSearch } from "wouter";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Trophy, ArrowLeft, Users, Gamepad2, Medal, X } from "lucide-react";
+import { Trophy, ArrowLeft, Users, Gamepad2, Medal, X, UsersRound } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useMemo } from "react";
 
 export default function Leaderboard() {
   const search = useSearch();
@@ -16,6 +17,25 @@ export default function Leaderboard() {
     sessionId: isFiltered ? sessionId : undefined,
     query: { queryKey: getGetLeaderboardQueryKey(isFiltered ? sessionId : undefined) },
   });
+
+  const { data: sessionData } = useGetSession(sessionId ?? 0, {
+    query: { enabled: isFiltered, queryKey: getGetSessionQueryKey(sessionId ?? 0) },
+  });
+
+  const showTeamRankings = isFiltered && !!sessionData?.showTeamRankings;
+
+  const teamRankings = useMemo(() => {
+    if (!showTeamRankings || !leaderboard) return null;
+    const teams: Record<string, { teamName: string; totalScore: number; correctAnswers: number; totalQuestions: number; playerCount: number }> = {};
+    leaderboard.forEach(entry => {
+      const key = entry.teamName || entry.playerName;
+      if (!teams[key]) teams[key] = { teamName: key, totalScore: 0, correctAnswers: 0, totalQuestions: entry.totalQuestions, playerCount: 0 };
+      teams[key].totalScore += entry.score;
+      teams[key].correctAnswers += entry.correctAnswers;
+      teams[key].playerCount++;
+    });
+    return Object.values(teams).sort((a, b) => b.totalScore - a.totalScore);
+  }, [showTeamRankings, leaderboard]);
 
   const { data: stats, isLoading: isLoadingStats } = useGetLeaderboardStats({
     query: { queryKey: getGetLeaderboardStatsQueryKey() },
@@ -98,8 +118,8 @@ export default function Leaderboard() {
 
         <Card className="border-card-border bg-card/50">
           <CardHeader>
-            <CardTitle className="text-2xl">
-              {isFiltered ? "Final Rankings" : "Top Players"}
+            <CardTitle className="text-2xl flex items-center gap-2">
+              {showTeamRankings ? <><UsersRound className="w-6 h-6" /> Team Rankings</> : (isFiltered ? "Final Rankings" : "Top Players")}
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -109,6 +129,33 @@ export default function Leaderboard() {
                   <Skeleton key={i} className="h-16 w-full" />
                 ))}
               </div>
+            ) : showTeamRankings && teamRankings ? (
+              teamRankings.length > 0 ? (
+                <div className="space-y-4">
+                  {teamRankings.map((team, index) => (
+                    <div key={team.teamName} className="flex items-center justify-between p-4 rounded-xl bg-background border border-border">
+                      <div className="flex items-center gap-4">
+                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg
+                          ${index === 0 ? "bg-yellow-500/20 text-yellow-500" : index === 1 ? "bg-gray-400/20 text-gray-400" : index === 2 ? "bg-amber-700/20 text-amber-700" : "bg-muted text-muted-foreground"}`}>
+                          {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : index + 1}
+                        </div>
+                        <div>
+                          <div className="font-bold text-lg">{team.teamName}</div>
+                          <div className="text-xs text-muted-foreground">{team.playerCount} player{team.playerCount !== 1 ? "s" : ""} · {team.correctAnswers}/{team.totalQuestions * team.playerCount} correct</div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-2xl font-black text-primary">{team.totalScore} pts</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Trophy className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                  <p>No scores saved for this session.</p>
+                </div>
+              )
             ) : leaderboard && leaderboard.length > 0 ? (
               <div className="space-y-4">
                 {leaderboard.map((entry, index) => (
