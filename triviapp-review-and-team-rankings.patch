@@ -1,0 +1,710 @@
+diff --git a/client/src/App.tsx b/client/src/App.tsx
+index 85e68e2..0f781f4 100644
+--- a/client/src/App.tsx
++++ b/client/src/App.tsx
+@@ -15,6 +15,7 @@ import HostQuestionSetDetail from "@/pages/host/question-set-detail";
+ import HostLiveSession from "@/pages/host/live-session";
+ import PlayerJoin from "@/pages/player/join";
+ import PlayerGame from "@/pages/player/game";
++import PlayerReview from "@/pages/player/review";
+ import Leaderboard from "@/pages/leaderboard";
+ 
+ const queryClient = new QueryClient({
+@@ -52,6 +53,7 @@ function Router() {
+       </Route>
+       <Route path="/play" component={PlayerJoin} />
+       <Route path="/play/:code" component={PlayerGame} />
++      <Route path="/play/:code/review" component={PlayerReview} />
+       <Route path="/leaderboard" component={Leaderboard} />
+       <Route component={NotFound} />
+     </Switch>
+diff --git a/client/src/lib/api.ts b/client/src/lib/api.ts
+index f618dd3..6e31fa9 100644
+--- a/client/src/lib/api.ts
++++ b/client/src/lib/api.ts
+@@ -56,6 +56,8 @@ export interface Session {
+   hostName: string;
+   status: string;
+   teamMode: boolean;
++  reviewEnabled: boolean;
++  showTeamRankings: boolean;
+   createdAt: string;
+   endedAt?: string | null;
+   playerCount: number;
+@@ -196,9 +198,9 @@ export function useListSessions(options?: { query?: UseQueryOptions<Session[], E
+ }
+ 
+ export function useCreateSession(options?: {
+-  mutation?: UseMutationOptions<Session, Error, { data: { questionSetId: number; hostName: string; teamMode?: boolean } }>;
++  mutation?: UseMutationOptions<Session, Error, { data: { questionSetId: number; hostName: string; teamMode?: boolean; reviewEnabled?: boolean; showTeamRankings?: boolean } }>;
+ }) {
+-  return useMutation<Session, Error, { data: { questionSetId: number; hostName: string; teamMode?: boolean } }>({
++  return useMutation<Session, Error, { data: { questionSetId: number; hostName: string; teamMode?: boolean; reviewEnabled?: boolean; showTeamRankings?: boolean } }>({
+     mutationFn: ({ data }) =>
+       apiFetch<Session>("/api/sessions", {
+         method: "POST",
+@@ -223,6 +225,20 @@ export function useGetSession(
+   });
+ }
+ 
++export function useUpdateSession(options?: {
++  mutation?: UseMutationOptions<Session, Error, { id: number; data: { reviewEnabled?: boolean; showTeamRankings?: boolean } }>;
++}) {
++  return useMutation<Session, Error, { id: number; data: { reviewEnabled?: boolean; showTeamRankings?: boolean } }>({
++    mutationFn: ({ id, data }) =>
++      apiFetch<Session>(`/api/sessions/${id}`, {
++        method: "PATCH",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify(data),
++      }),
++    ...options?.mutation,
++  });
++}
++
+ // ─── Leaderboard ─────────────────────────────────────────────────────────────
+ 
+ export const getGetLeaderboardQueryKey = (sessionId?: number) =>
+diff --git a/client/src/pages/host/dashboard.tsx b/client/src/pages/host/dashboard.tsx
+index 9bad143..380272b 100644
+--- a/client/src/pages/host/dashboard.tsx
++++ b/client/src/pages/host/dashboard.tsx
+@@ -21,6 +21,8 @@ export default function HostDashboard() {
+   const [hostName, setHostName] = useState("Host");
+   const [selectedSet, setSelectedSet] = useState("");
+   const [teamMode, setTeamMode] = useState(false);
++  const [reviewEnabled, setReviewEnabled] = useState(false);
++  const [showTeamRankings, setShowTeamRankings] = useState(false);
+ 
+   const [filterDifficulty, setFilterDifficulty] = useState("all");
+   const [filterCategory, setFilterCategory] = useState("all");
+@@ -75,7 +77,7 @@ export default function HostDashboard() {
+     if (!selectedSet || !hostName) return;
+ 
+     createSession.mutate(
+-      { data: { questionSetId: parseInt(selectedSet), hostName, teamMode } },
++      { data: { questionSetId: parseInt(selectedSet), hostName, teamMode, reviewEnabled, showTeamRankings } },
+       {
+         onSuccess: async (session) => {
+           if (hasActiveFilter && filteredQuestions.length > 0) {
+@@ -86,6 +88,8 @@ export default function HostDashboard() {
+                 questionSetId: session.questionSetId,
+                 hostName: session.hostName,
+                 teamMode: session.teamMode ?? false,
++                reviewEnabled: session.reviewEnabled ?? false,
++                showTeamRankings: session.showTeamRankings ?? false,
+                 startedAt: new Date().toISOString(),
+                 filteredQuestionIds: filteredQuestions.map(q => q.id),
+               });
+@@ -218,7 +222,23 @@ export default function HostDashboard() {
+                       <Label className="text-base">Team Mode</Label>
+                       <p className="text-xs text-muted-foreground">Ask players for team names</p>
+                     </div>
+-                    <Switch checked={teamMode} onCheckedChange={setTeamMode} />
++                    <Switch checked={teamMode} onCheckedChange={(v) => { setTeamMode(v); if (!v) setShowTeamRankings(false); }} />
++                  </div>
++                  {teamMode && (
++                    <div className="flex items-center justify-between pl-4 border-l-2 border-border">
++                      <div>
++                        <Label className="text-base">Team Rankings</Label>
++                        <p className="text-xs text-muted-foreground">Show scores grouped by team</p>
++                      </div>
++                      <Switch checked={showTeamRankings} onCheckedChange={setShowTeamRankings} />
++                    </div>
++                  )}
++                  <div className="flex items-center justify-between pt-2 border-t">
++                    <div>
++                      <Label className="text-base">Question Review</Label>
++                      <p className="text-xs text-muted-foreground">Let players review every answer after the game</p>
++                    </div>
++                    <Switch checked={reviewEnabled} onCheckedChange={setReviewEnabled} />
+                   </div>
+                 </div>
+                 <DialogFooter>
+diff --git a/client/src/pages/host/live-session.tsx b/client/src/pages/host/live-session.tsx
+index 91eda8f..20f174e 100644
+--- a/client/src/pages/host/live-session.tsx
++++ b/client/src/pages/host/live-session.tsx
+@@ -1,8 +1,10 @@
+ import { useEffect, useState, useMemo } from "react";
+ import { Link, useParams } from "wouter";
+-import { useGetSession, useGetQuestionSet, useSaveLeaderboard, getGetSessionQueryKey, getGetQuestionSetQueryKey } from "@/lib/api";
++import { useGetSession, useGetQuestionSet, useSaveLeaderboard, useUpdateSession, getGetSessionQueryKey, getGetQuestionSetQueryKey } from "@/lib/api";
+ import { Button } from "@/components/ui/button";
+-import { Play, SkipForward, StopCircle, ArrowLeft, Users, Zap, CheckCircle2, Copy, Trophy } from "lucide-react";
++import { Switch } from "@/components/ui/switch";
++import { Label } from "@/components/ui/label";
++import { Play, SkipForward, StopCircle, ArrowLeft, Users, Zap, CheckCircle2, Copy, Trophy, ListChecks, UsersRound } from "lucide-react";
+ import { Skeleton } from "@/components/ui/skeleton";
+ import { db } from "@/lib/firebase";
+ import { doc, onSnapshot, setDoc, updateDoc, collection } from "firebase/firestore";
+@@ -46,6 +48,8 @@ export default function HostLiveSession() {
+           questionSetId: sessionData.questionSetId,
+           hostName: sessionData.hostName,
+           teamMode: sessionData.teamMode || false,
++          reviewEnabled: sessionData.reviewEnabled || false,
++          showTeamRankings: sessionData.showTeamRankings || false,
+           startedAt: new Date().toISOString()
+         });
+       }
+@@ -104,6 +108,19 @@ export default function HostLiveSession() {
+   };
+ 
+   const saveLeaderboard = useSaveLeaderboard();
++  const updateSession = useUpdateSession();
++
++  const handleToggleReview = async (checked: boolean) => {
++    if (!sessionData?.code) return;
++    await updateDoc(doc(db, `sessions/${sessionData.code}`), { reviewEnabled: checked });
++    if (sessionData.id) updateSession.mutate({ id: sessionData.id, data: { reviewEnabled: checked } });
++  };
++
++  const handleToggleTeamRankings = async (checked: boolean) => {
++    if (!sessionData?.code) return;
++    await updateDoc(doc(db, `sessions/${sessionData.code}`), { showTeamRankings: checked });
++    if (sessionData.id) updateSession.mutate({ id: sessionData.id, data: { showTeamRankings: checked } });
++  };
+ 
+   const answeredCount = useMemo(
+     () => players.filter((p) => p.answeredCurrentQuestion).length,
+@@ -318,21 +335,76 @@ export default function HostLiveSession() {
+                 {status === "lobby" ? "Waiting to start..." : "Session Complete"}
+               </div>
+             )}
++            <div className="mt-4 pt-4 border-t border-border space-y-3">
++              <div className="flex items-center justify-between">
++                <div className="flex items-center gap-2">
++                  <ListChecks className="w-4 h-4 text-muted-foreground shrink-0" />
++                  <div>
++                    <Label className="text-sm font-medium">Question Review</Label>
++                    <p className="text-xs text-muted-foreground">Players can review answers after the game</p>
++                  </div>
++                </div>
++                <Switch checked={!!sessionState?.reviewEnabled} onCheckedChange={handleToggleReview} />
++              </div>
++              {sessionData?.teamMode && (
++                <div className="flex items-center justify-between">
++                  <div className="flex items-center gap-2">
++                    <UsersRound className="w-4 h-4 text-muted-foreground shrink-0" />
++                    <div>
++                      <Label className="text-sm font-medium">Team Rankings</Label>
++                      <p className="text-xs text-muted-foreground">Group leaderboard scores by team</p>
++                    </div>
++                  </div>
++                  <Switch checked={!!sessionState?.showTeamRankings} onCheckedChange={handleToggleTeamRankings} />
++                </div>
++              )}
++            </div>
+           </div>
+           <div className="flex-1 overflow-y-auto p-4">
+             <h3 className="font-bold uppercase tracking-wider text-sm text-muted-foreground mb-4 sticky top-0 bg-card py-1">Live Leaderboard</h3>
+-            <div className="space-y-2">
+-              {players.map((p, i) => (
+-                <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-background border border-border">
+-                  <div className="flex items-center gap-3">
+-                    <div className="w-6 text-center font-bold text-muted-foreground">{i + 1}</div>
+-                    <div className="font-bold">{p.name}</div>
++            {sessionState?.showTeamRankings && sessionData?.teamMode ? (
++              <div className="space-y-2">
++                {Object.values(
++                  players.reduce<Record<string, { teamName: string; score: number; memberCount: number }>>((acc, p) => {
++                    const key = (p.teamName as string) || (p.name as string) || p.id;
++                    if (!acc[key]) acc[key] = { teamName: key, score: 0, memberCount: 0 };
++                    acc[key].score += (p.score as number) || 0;
++                    acc[key].memberCount++;
++                    return acc;
++                  }, {})
++                )
++                  .sort((a, b) => b.score - a.score)
++                  .map((team, i) => (
++                    <div key={team.teamName} className="flex items-center justify-between p-3 rounded-xl bg-background border border-border">
++                      <div className="flex items-center gap-3">
++                        <div className="w-6 text-center font-bold text-muted-foreground">{i + 1}</div>
++                        <div>
++                          <div className="font-bold">{team.teamName}</div>
++                          <div className="text-xs text-muted-foreground">{team.memberCount} player{team.memberCount !== 1 ? "s" : ""}</div>
++                        </div>
++                      </div>
++                      <div className="font-black text-primary font-mono">{team.score}</div>
++                    </div>
++                  ))}
++                {players.length === 0 && <div className="text-center text-muted-foreground text-sm py-4">No players joined yet.</div>}
++              </div>
++            ) : (
++              <div className="space-y-2">
++                {players.map((p, i) => (
++                  <div key={p.id} className="flex items-center justify-between p-3 rounded-xl bg-background border border-border">
++                    <div className="flex items-center gap-3">
++                      <div className="w-6 text-center font-bold text-muted-foreground">{i + 1}</div>
++                      <div>
++                        <div className="font-bold">{p.name}</div>
++                        {p.teamName && <div className="text-xs text-muted-foreground">{p.teamName}</div>}
++                      </div>
++                    </div>
++                    <div className="font-black text-primary font-mono">{p.score}</div>
+                   </div>
+-                  <div className="font-black text-primary font-mono">{p.score}</div>
+-                </div>
+-              ))}
+-              {players.length === 0 && <div className="text-center text-muted-foreground text-sm py-4">No players joined yet.</div>}
+-            </div>
++                ))}
++                {players.length === 0 && <div className="text-center text-muted-foreground text-sm py-4">No players joined yet.</div>}
++              </div>
++            )}
+           </div>
+         </aside>
+       </div>
+diff --git a/client/src/pages/leaderboard.tsx b/client/src/pages/leaderboard.tsx
+index 0c3ef2f..44d650a 100644
+--- a/client/src/pages/leaderboard.tsx
++++ b/client/src/pages/leaderboard.tsx
+@@ -1,9 +1,10 @@
+-import { useGetLeaderboard, useGetLeaderboardStats, getGetLeaderboardQueryKey, getGetLeaderboardStatsQueryKey } from "@/lib/api";
++import { useGetLeaderboard, useGetLeaderboardStats, useGetSession, getGetLeaderboardQueryKey, getGetLeaderboardStatsQueryKey, getGetSessionQueryKey } from "@/lib/api";
+ import { Link, useSearch } from "wouter";
+ import { Button } from "@/components/ui/button";
+ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+-import { Trophy, ArrowLeft, Users, Gamepad2, Medal, X } from "lucide-react";
++import { Trophy, ArrowLeft, Users, Gamepad2, Medal, X, UsersRound } from "lucide-react";
+ import { Skeleton } from "@/components/ui/skeleton";
++import { useMemo } from "react";
+ 
+ export default function Leaderboard() {
+   const search = useSearch();
+@@ -17,6 +18,25 @@ export default function Leaderboard() {
+     query: { queryKey: getGetLeaderboardQueryKey(isFiltered ? sessionId : undefined) },
+   });
+ 
++  const { data: sessionData } = useGetSession(sessionId ?? 0, {
++    query: { enabled: isFiltered, queryKey: getGetSessionQueryKey(sessionId ?? 0) },
++  });
++
++  const showTeamRankings = isFiltered && !!sessionData?.showTeamRankings;
++
++  const teamRankings = useMemo(() => {
++    if (!showTeamRankings || !leaderboard) return null;
++    const teams: Record<string, { teamName: string; totalScore: number; correctAnswers: number; totalQuestions: number; playerCount: number }> = {};
++    leaderboard.forEach(entry => {
++      const key = entry.teamName || entry.playerName;
++      if (!teams[key]) teams[key] = { teamName: key, totalScore: 0, correctAnswers: 0, totalQuestions: entry.totalQuestions, playerCount: 0 };
++      teams[key].totalScore += entry.score;
++      teams[key].correctAnswers += entry.correctAnswers;
++      teams[key].playerCount++;
++    });
++    return Object.values(teams).sort((a, b) => b.totalScore - a.totalScore);
++  }, [showTeamRankings, leaderboard]);
++
+   const { data: stats, isLoading: isLoadingStats } = useGetLeaderboardStats({
+     query: { queryKey: getGetLeaderboardStatsQueryKey() },
+   });
+@@ -98,8 +118,8 @@ export default function Leaderboard() {
+ 
+         <Card className="border-card-border bg-card/50">
+           <CardHeader>
+-            <CardTitle className="text-2xl">
+-              {isFiltered ? "Final Rankings" : "Top Players"}
++            <CardTitle className="text-2xl flex items-center gap-2">
++              {showTeamRankings ? <><UsersRound className="w-6 h-6" /> Team Rankings</> : (isFiltered ? "Final Rankings" : "Top Players")}
+             </CardTitle>
+           </CardHeader>
+           <CardContent>
+@@ -109,6 +129,33 @@ export default function Leaderboard() {
+                   <Skeleton key={i} className="h-16 w-full" />
+                 ))}
+               </div>
++            ) : showTeamRankings && teamRankings ? (
++              teamRankings.length > 0 ? (
++                <div className="space-y-4">
++                  {teamRankings.map((team, index) => (
++                    <div key={team.teamName} className="flex items-center justify-between p-4 rounded-xl bg-background border border-border">
++                      <div className="flex items-center gap-4">
++                        <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg
++                          ${index === 0 ? "bg-yellow-500/20 text-yellow-500" : index === 1 ? "bg-gray-400/20 text-gray-400" : index === 2 ? "bg-amber-700/20 text-amber-700" : "bg-muted text-muted-foreground"}`}>
++                          {index === 0 ? "🥇" : index === 1 ? "🥈" : index === 2 ? "🥉" : index + 1}
++                        </div>
++                        <div>
++                          <div className="font-bold text-lg">{team.teamName}</div>
++                          <div className="text-xs text-muted-foreground">{team.playerCount} player{team.playerCount !== 1 ? "s" : ""} · {team.correctAnswers}/{team.totalQuestions * team.playerCount} correct</div>
++                        </div>
++                      </div>
++                      <div className="text-right">
++                        <div className="text-2xl font-black text-primary">{team.totalScore} pts</div>
++                      </div>
++                    </div>
++                  ))}
++                </div>
++              ) : (
++                <div className="text-center py-12 text-muted-foreground">
++                  <Trophy className="w-12 h-12 mx-auto mb-4 opacity-20" />
++                  <p>No scores saved for this session.</p>
++                </div>
++              )
+             ) : leaderboard && leaderboard.length > 0 ? (
+               <div className="space-y-4">
+                 {leaderboard.map((entry, index) => (
+diff --git a/client/src/pages/player/game.tsx b/client/src/pages/player/game.tsx
+index 6849b78..3019d75 100644
+--- a/client/src/pages/player/game.tsx
++++ b/client/src/pages/player/game.tsx
+@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
+ import { db } from "@/lib/firebase";
+ import { doc, onSnapshot, setDoc, getDoc } from "firebase/firestore";
+ import { motion, AnimatePresence } from "framer-motion";
+-import { Trophy, Clock, AlertCircle } from "lucide-react";
++import { Trophy, Clock, AlertCircle, ListChecks } from "lucide-react";
+ 
+ export default function PlayerGame() {
+   const params = useParams();
+@@ -185,7 +185,12 @@ export default function PlayerGame() {
+               <h2 className="text-4xl font-black mb-2 text-foreground">Game Over</h2>
+               <div className="text-xl text-muted-foreground mb-8">Final Score</div>
+               <div className="text-7xl font-black text-primary font-mono">{playerState.score}</div>
+-              <Button className="mt-12 w-full max-w-xs h-14 text-lg font-bold" onClick={() => setLocation('/')}>
++              {sessionState.reviewEnabled && (
++                <Button variant="outline" className="mt-8 w-full max-w-xs h-14 text-lg font-bold gap-2" onClick={() => setLocation(`/play/${code}/review`)}>
++                  <ListChecks className="w-5 h-5" /> Review Answers
++                </Button>
++              )}
++              <Button className="mt-4 w-full max-w-xs h-14 text-lg font-bold" onClick={() => setLocation('/')}>
+                 Return Home
+               </Button>
+             </motion.div>
+diff --git a/client/src/pages/player/review.tsx b/client/src/pages/player/review.tsx
+new file mode 100644
+index 0000000..88aee3f
+--- /dev/null
++++ b/client/src/pages/player/review.tsx
+@@ -0,0 +1,159 @@
++import { useEffect, useMemo, useState } from "react";
++import { useParams, useLocation } from "wouter";
++import { Button } from "@/components/ui/button";
++import { Skeleton } from "@/components/ui/skeleton";
++import { useGetQuestionSet, getGetQuestionSetQueryKey } from "@/lib/api";
++import { db } from "@/lib/firebase";
++import { doc, getDoc, collection, query, where, getDocs } from "firebase/firestore";
++import { ArrowLeft, CheckCircle2, XCircle, MinusCircle, ListChecks } from "lucide-react";
++
++interface AnswerRecord {
++  answer: string | null;
++  isCorrect: boolean;
++  pointsEarned: number;
++}
++
++export default function PlayerReview() {
++  const params = useParams();
++  const code = params.code?.toUpperCase();
++  const [, setLocation] = useLocation();
++
++  const [loading, setLoading] = useState(true);
++  const [notFound, setNotFound] = useState(false);
++  const [sessionState, setSessionState] = useState<any>(null);
++  const [playerState, setPlayerState] = useState<any>(null);
++  const [answersByIndex, setAnswersByIndex] = useState<Record<number, AnswerRecord>>({});
++
++  useEffect(() => {
++    if (!code) return;
++    const playerId = localStorage.getItem(`trivia_player_${code}`);
++    if (!playerId) { setLocation("/play"); return; }
++
++    (async () => {
++      const sessionSnap = await getDoc(doc(db, `sessions/${code}`));
++      if (!sessionSnap.exists()) { setNotFound(true); setLoading(false); return; }
++      setSessionState(sessionSnap.data());
++
++      const playerSnap = await getDoc(doc(db, `sessions/${code}/players/${playerId}`));
++      if (playerSnap.exists()) setPlayerState(playerSnap.data());
++
++      const answersQuery = query(collection(db, `sessions/${code}/answers`), where("playerId", "==", playerId));
++      const answersSnap = await getDocs(answersQuery);
++      const map: Record<number, AnswerRecord> = {};
++      answersSnap.forEach((d) => {
++        const data = d.data();
++        map[data.questionIndex] = { answer: data.answer ?? null, isCorrect: !!data.isCorrect, pointsEarned: data.pointsEarned ?? 0 };
++      });
++      setAnswersByIndex(map);
++      setLoading(false);
++    })();
++  }, [code, setLocation]);
++
++  const { data: setData, isLoading: isLoadingSet } = useGetQuestionSet(sessionState?.questionSetId || 0, {
++    query: { enabled: !!sessionState?.questionSetId, queryKey: getGetQuestionSetQueryKey(sessionState?.questionSetId || 0) },
++  });
++
++  const activeQuestions = useMemo(() => {
++    const all = setData?.questions ?? [];
++    const ids: number[] | undefined = sessionState?.filteredQuestionIds;
++    if (!ids || ids.length === 0) return all;
++    return all.filter((q) => ids.includes(q.id));
++  }, [setData?.questions, sessionState?.filteredQuestionIds]);
++
++  if (loading || (sessionState?.questionSetId && isLoadingSet)) {
++    return (
++      <div className="min-h-screen bg-background p-6 flex flex-col items-center">
++        <div className="w-full max-w-2xl space-y-3 pt-10">
++          <Skeleton className="h-10 w-48" />
++          <Skeleton className="h-24 w-full" />
++          <Skeleton className="h-24 w-full" />
++          <Skeleton className="h-24 w-full" />
++        </div>
++      </div>
++    );
++  }
++
++  if (notFound) {
++    return (
++      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-center">
++        <h2 className="text-2xl font-bold mb-2">Session not found</h2>
++        <p className="text-muted-foreground mb-6">This game session no longer exists.</p>
++        <Button onClick={() => setLocation("/")}>Return Home</Button>
++      </div>
++    );
++  }
++
++  if (!sessionState?.reviewEnabled) {
++    return (
++      <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 text-center">
++        <ListChecks className="w-12 h-12 text-muted-foreground mb-4 opacity-40" />
++        <h2 className="text-2xl font-bold mb-2">Review not available</h2>
++        <p className="text-muted-foreground mb-6">The host hasn't turned on question review for this game.</p>
++        <Button onClick={() => setLocation("/")}>Return Home</Button>
++      </div>
++    );
++  }
++
++  return (
++    <div className="min-h-screen bg-background text-foreground p-4 md:p-6">
++      <div className="max-w-2xl mx-auto space-y-6">
++        <div className="flex items-center gap-4 sticky top-0 bg-background py-2 z-10">
++          <Button variant="ghost" size="icon" className="rounded-full" onClick={() => setLocation("/")}>
++            <ArrowLeft className="w-5 h-5" />
++          </Button>
++          <div>
++            <h1 className="text-2xl font-black">Question Review</h1>
++            {playerState?.name && (
++              <p className="text-sm text-muted-foreground">{playerState.name} · {playerState.score ?? 0} pts</p>
++            )}
++          </div>
++        </div>
++
++        <div className="space-y-4">
++          {activeQuestions.map((q, i) => {
++            const record = answersByIndex[i];
++            const answered = !!record?.answer;
++            const isCorrect = answered && record.isCorrect;
++
++            return (
++              <div key={q.id} className="rounded-2xl border border-border bg-card p-5">
++                <div className="flex items-start justify-between gap-3 mb-3">
++                  <div className="text-xs font-bold text-muted-foreground tracking-widest uppercase">Question {i + 1}</div>
++                  {isCorrect ? (
++                    <span className="flex items-center gap-1 text-xs font-bold text-primary bg-primary/10 px-2 py-1 rounded-full shrink-0">
++                      <CheckCircle2 className="w-3.5 h-3.5" /> Correct
++                    </span>
++                  ) : answered ? (
++                    <span className="flex items-center gap-1 text-xs font-bold text-destructive bg-destructive/10 px-2 py-1 rounded-full shrink-0">
++                      <XCircle className="w-3.5 h-3.5" /> Incorrect
++                    </span>
++                  ) : (
++                    <span className="flex items-center gap-1 text-xs font-bold text-muted-foreground bg-muted px-2 py-1 rounded-full shrink-0">
++                      <MinusCircle className="w-3.5 h-3.5" /> No Answer
++                    </span>
++                  )}
++                </div>
++                <p className="font-bold text-lg mb-4">{q.text}</p>
++                <div className="space-y-1.5 text-sm">
++                  <div className={`flex gap-2 ${isCorrect ? "text-primary" : "text-destructive"}`}>
++                    <span className="font-semibold shrink-0">Your answer:</span>
++                    <span className="font-medium">{answered ? record.answer : "—"}</span>
++                  </div>
++                  {!isCorrect && (
++                    <div className="flex gap-2 text-primary">
++                      <span className="font-semibold shrink-0">Correct answer:</span>
++                      <span className="font-medium">{q.correctAnswer}</span>
++                    </div>
++                  )}
++                </div>
++              </div>
++            );
++          })}
++          {activeQuestions.length === 0 && (
++            <div className="text-center py-12 text-muted-foreground">No questions found for this session.</div>
++          )}
++        </div>
++      </div>
++    </div>
++  );
++}
+diff --git a/server/routes/sessions.ts b/server/routes/sessions.ts
+index a63333a..f153917 100644
+--- a/server/routes/sessions.ts
++++ b/server/routes/sessions.ts
+@@ -4,6 +4,8 @@ import { db, sessionsTable, questionSetsTable } from "../db";
+ import {
+   CreateSessionBody,
+   GetSessionParams,
++  UpdateSessionParams,
++  UpdateSessionBody,
+   ListSessionsResponse,
+   GetSessionResponse,
+ } from "../validators";
+@@ -29,6 +31,8 @@ router.get("/sessions", async (_req, res): Promise<void> => {
+       hostName: sessionsTable.hostName,
+       status: sessionsTable.status,
+       teamMode: sessionsTable.teamMode,
++      reviewEnabled: sessionsTable.reviewEnabled,
++      showTeamRankings: sessionsTable.showTeamRankings,
+       createdAt: sessionsTable.createdAt,
+       endedAt: sessionsTable.endedAt,
+     })
+@@ -46,6 +50,8 @@ router.get("/sessions", async (_req, res): Promise<void> => {
+         hostName: s.hostName,
+         status: s.status,
+         teamMode: s.teamMode,
++        reviewEnabled: s.reviewEnabled,
++        showTeamRankings: s.showTeamRankings,
+         createdAt: s.createdAt.toISOString(),
+         endedAt: s.endedAt ? s.endedAt.toISOString() : null,
+         playerCount: 0,
+@@ -85,6 +91,8 @@ router.post("/sessions", async (req, res): Promise<void> => {
+       hostName: parsed.data.hostName,
+       status: "lobby",
+       teamMode: parsed.data.teamMode ?? false,
++      reviewEnabled: parsed.data.reviewEnabled ?? false,
++      showTeamRankings: parsed.data.showTeamRankings ?? false,
+     })
+     .returning();
+ 
+@@ -97,6 +105,8 @@ router.post("/sessions", async (req, res): Promise<void> => {
+       hostName: session.hostName,
+       status: session.status,
+       teamMode: session.teamMode,
++      reviewEnabled: session.reviewEnabled,
++      showTeamRankings: session.showTeamRankings,
+       createdAt: session.createdAt.toISOString(),
+       endedAt: null,
+       playerCount: 0,
+@@ -120,6 +130,8 @@ router.get("/sessions/:id", async (req, res): Promise<void> => {
+       hostName: sessionsTable.hostName,
+       status: sessionsTable.status,
+       teamMode: sessionsTable.teamMode,
++      reviewEnabled: sessionsTable.reviewEnabled,
++      showTeamRankings: sessionsTable.showTeamRankings,
+       createdAt: sessionsTable.createdAt,
+       endedAt: sessionsTable.endedAt,
+     })
+@@ -141,6 +153,8 @@ router.get("/sessions/:id", async (req, res): Promise<void> => {
+       hostName: row.hostName,
+       status: row.status,
+       teamMode: row.teamMode,
++      reviewEnabled: row.reviewEnabled,
++      showTeamRankings: row.showTeamRankings,
+       createdAt: row.createdAt.toISOString(),
+       endedAt: row.endedAt ? row.endedAt.toISOString() : null,
+       playerCount: 0,
+@@ -148,4 +162,52 @@ router.get("/sessions/:id", async (req, res): Promise<void> => {
+   );
+ });
+ 
++router.patch("/sessions/:id", async (req, res): Promise<void> => {
++  const params = UpdateSessionParams.safeParse(req.params);
++  if (!params.success) {
++    res.status(400).json({ error: params.error.message });
++    return;
++  }
++
++  const body = UpdateSessionBody.safeParse(req.body);
++  if (!body.success) {
++    res.status(400).json({ error: body.error.message });
++    return;
++  }
++
++  const updates: Partial<{ reviewEnabled: boolean; showTeamRankings: boolean }> = {};
++  if (body.data.reviewEnabled !== undefined) updates.reviewEnabled = body.data.reviewEnabled;
++  if (body.data.showTeamRankings !== undefined) updates.showTeamRankings = body.data.showTeamRankings;
++
++  const [updated] = await db
++    .update(sessionsTable)
++    .set(updates)
++    .where(eq(sessionsTable.id, params.data.id))
++    .returning();
++
++  if (!updated) {
++    res.status(404).json({ error: "Session not found" });
++    return;
++  }
++
++  const [qs] = await db.select().from(questionSetsTable).where(eq(questionSetsTable.id, updated.questionSetId));
++
++  res.json(
++    GetSessionResponse.parse({
++      id: updated.id,
++      code: updated.code,
++      questionSetId: updated.questionSetId,
++      questionSetName: qs?.name ?? "Unknown",
++      hostName: updated.hostName,
++      status: updated.status,
++      teamMode: updated.teamMode,
++      reviewEnabled: updated.reviewEnabled,
++      showTeamRankings: updated.showTeamRankings,
++      createdAt: updated.createdAt.toISOString(),
++      endedAt: updated.endedAt ? updated.endedAt.toISOString() : null,
++      playerCount: 0,
++    }),
++  );
++});
++
+ export default router;
+diff --git a/server/schema/sessions.ts b/server/schema/sessions.ts
+index 619e12a..8ef6f05 100644
+--- a/server/schema/sessions.ts
++++ b/server/schema/sessions.ts
+@@ -10,6 +10,8 @@ export const sessionsTable = pgTable("sessions", {
+   hostName: text("host_name").notNull(),
+   status: text("status").notNull().default("lobby"),
+   teamMode: boolean("team_mode").notNull().default(false),
++  reviewEnabled: boolean("review_enabled").notNull().default(false),
++  showTeamRankings: boolean("show_team_rankings").notNull().default(false),
+   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+   endedAt: timestamp("ended_at", { withTimezone: true }),
+ });
+diff --git a/server/validators.ts b/server/validators.ts
+index 55c5fba..7a650d2 100644
+--- a/server/validators.ts
++++ b/server/validators.ts
+@@ -34,10 +34,18 @@ export const CreateSessionBody = z.object({
+   questionSetId: z.number(),
+   hostName: z.string(),
+   teamMode: z.boolean().optional(),
++  reviewEnabled: z.boolean().optional(),
++  showTeamRankings: z.boolean().optional(),
+ });
+ 
+ export const GetSessionParams = z.object({ id: z.coerce.number() });
+ 
++export const UpdateSessionParams = z.object({ id: z.coerce.number() });
++export const UpdateSessionBody = z.object({
++  reviewEnabled: z.boolean().optional(),
++  showTeamRankings: z.boolean().optional(),
++});
++
+ const LeaderboardEntrySchema = z.object({
+   id: z.number(),
+   playerName: z.string(),
+@@ -119,6 +127,8 @@ export const ListSessionsResponse = z.array(
+     hostName: z.string(),
+     status: z.string(),
+     teamMode: z.boolean(),
++    reviewEnabled: z.boolean(),
++    showTeamRankings: z.boolean(),
+     createdAt: z.string(),
+     endedAt: z.string().nullish(),
+     playerCount: z.number(),
+@@ -133,6 +143,8 @@ export const GetSessionResponse = z.object({
+   hostName: z.string(),
+   status: z.string(),
+   teamMode: z.boolean(),
++  reviewEnabled: z.boolean(),
++  showTeamRankings: z.boolean(),
+   createdAt: z.string(),
+   endedAt: z.string().nullish(),
+   playerCount: z.number(),
