@@ -62,20 +62,21 @@ router.get("/sessions", async (_req, res): Promise<void> => {
 });
 
 router.post("/sessions", async (req, res): Promise<void> => {
-  const parsed = CreateSessionBody.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.message });
-    return;
-  }
+  try {
+    const parsed = CreateSessionBody.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.message });
+      return;
+    }
 
-  const [qs] = await db.select().from(questionSetsTable).where(eq(questionSetsTable.id, parsed.data.questionSetId));
+    const [qs] = await db.select().from(questionSetsTable).where(eq(questionSetsTable.id, parsed.data.questionSetId));
 
-  if (!qs) {
-    res.status(404).json({ error: "Question set not found" });
-    return;
-  }
+    if (!qs) {
+      res.status(404).json({ error: "Question set not found" });
+      return;
+    }
 
-  let code = generateCode();
+    let code = generateCode();
   let attempts = 0;
   while (attempts < 10) {
     const [existing] = await db.select().from(sessionsTable).where(eq(sessionsTable.code, code));
@@ -176,8 +177,10 @@ router.post("/sessions", async (req, res): Promise<void> => {
       throw insertError;
     }
   } catch (error) {
-    logger.error({ err: error, questionSetId: parsed.data.questionSetId }, "Failed to create session");
-    res.status(500).json({ error: "Failed to create session" });
+    logger.error({ err: error, body: req.body }, "Failed to create session in POST /sessions");
+    if (!res.headersSent) {
+      res.status(500).json({ error: "Failed to create session" });
+    }
   }
 });
 
