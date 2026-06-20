@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev:server": "node --watch dist/server/index.mjs",
+    "dev:server": "node dist/server/index.mjs",
     "dev:client": "vite",
     "build:server": "node build.mjs",
     "build:client": "vite build",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
     "drizzle-orm": "^0.44.2",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
@@ -68,9 +69,9 @@
     "date-fns": "^3.6.0",
     "drizzle-kit": "^0.31.1",
     "drizzle-zod": "^0.7.0",
+    "embla-carousel-react": "^8.6.0",
     "esbuild": "^0.25.4",
     "esbuild-plugin-pino": "^2.3.3",
-    "embla-carousel-react": "^8.6.0",
     "firebase": "^12.14.0",
     "framer-motion": "^12.9.4",
     "input-otp": "^1.4.2",

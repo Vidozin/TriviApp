@@ -1,4 +1,5 @@
 # environment
+dist
 .env
 .env.local
 
