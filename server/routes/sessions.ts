@@ -70,22 +70,20 @@ router.post("/sessions", async (req, res): Promise<void> => {
     }
 
     const [qs] = await db.select().from(questionSetsTable).where(eq(questionSetsTable.id, parsed.data.questionSetId));
-
     if (!qs) {
       res.status(404).json({ error: "Question set not found" });
       return;
     }
 
     let code = generateCode();
-  let attempts = 0;
-  while (attempts < 10) {
-    const [existing] = await db.select().from(sessionsTable).where(eq(sessionsTable.code, code));
-    if (!existing) break;
-    code = generateCode();
-    attempts++;
-  }
+    let attempts = 0;
+    while (attempts < 10) {
+      const [existing] = await db.select().from(sessionsTable).where(eq(sessionsTable.code, code));
+      if (!existing) break;
+      code = generateCode();
+      attempts++;
+    }
 
-  try {
     const insertValues = {
       code,
       questionSetId: parsed.data.questionSetId,
@@ -96,7 +94,7 @@ router.post("/sessions", async (req, res): Promise<void> => {
       showTeamRankings: parsed.data.showTeamRankings ?? false,
     };
 
-    const tryInsertWithReturn = async (values: Record<string, unknown>) =>
+    const tryInsertWithReturn = async (values: any) =>
       await db
         .insert(sessionsTable)
         .values(values)
@@ -113,7 +111,7 @@ router.post("/sessions", async (req, res): Promise<void> => {
           endedAt: sessionsTable.endedAt,
         });
 
-    const tryInsertBasic = async (values: Record<string, unknown>) =>
+    const tryInsertBasic = async (values: any) =>
       await db
         .insert(sessionsTable)
         .values(values)
@@ -130,7 +128,7 @@ router.post("/sessions", async (req, res): Promise<void> => {
 
     try {
       const [session] = await tryInsertWithReturn(insertValues);
-      return res.status(201).json(
+      res.status(201).json(
         GetSessionResponse.parse({
           id: session.id,
           code: session.code,
@@ -146,6 +144,7 @@ router.post("/sessions", async (req, res): Promise<void> => {
           playerCount: 0,
         }),
       );
+      return;
     } catch (insertError) {
       const message = String((insertError as Error).message ?? "");
       if (/column "review_enabled" does not exist|column "show_team_rankings" does not exist/i.test(message)) {
@@ -157,7 +156,7 @@ router.post("/sessions", async (req, res): Promise<void> => {
           teamMode: parsed.data.teamMode ?? false,
         };
         const [session] = await tryInsertBasic(fallbackValues);
-        return res.status(201).json(
+        res.status(201).json(
           GetSessionResponse.parse({
             id: session.id,
             code: session.code,
@@ -173,6 +172,7 @@ router.post("/sessions", async (req, res): Promise<void> => {
             playerCount: 0,
           }),
         );
+        return;
       }
       throw insertError;
     }
@@ -181,6 +181,7 @@ router.post("/sessions", async (req, res): Promise<void> => {
     if (!res.headersSent) {
       res.status(500).json({ error: "Failed to create session" });
     }
+    return;
   }
 });
 
